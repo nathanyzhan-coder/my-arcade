@@ -14,6 +14,11 @@
 #codes-panel{margin:12px 0}#codes-panel[hidden],#codes-toggle[hidden]{display:none}#codes-toggle{margin-top:12px;background:#233449;color:white}#code-input{width:100%;padding:10px;border-radius:8px;border:1px solid #90a5bd;background:#101d2c;color:white;margin:8px 0;font:inherit}#code-result{font-size:13px}#codes-panel label{display:block}
 #codes-panel{position:fixed;right:16px;top:50%;transform:translateY(-50%);z-index:10;width:min(250px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;margin:0;padding:18px;background:#101d2c;border:1px solid #6fffd0;border-radius:16px;box-shadow:0 12px 40px #0009;text-align:left}
 #codes-panel h2{font-size:24px;margin:0 0 16px}#codes-panel button{display:block;width:100%;margin:10px 0}#codes-panel #admin-close{background:#233449;color:#edf6ff}#codes-panel p{line-height:1.5;color:#bfd0e1}
+[hidden]{display:none!important}
+#charge-control{display:block;width:100%;margin-top:12px;background:#233449;color:#edf6ff}
+#druck-mode{background:transparent;color:#ffe4a3;flex-direction:column;padding:8px 16px}
+#druck-mode svg{width:72px;height:80px}
+#druck-mode small{font-weight:400;color:#bfd0e1}
 </style>
 </head>
 <body>
@@ -144,14 +149,20 @@ const abilities={
   truck:{name:'Extra life',duration:0,cooldown:0,description:'Automatically gain a life every 20 seconds while driving the truck. Movement speed: 90%.'},
   sport:{name:'Shield',duration:5,cooldown:25,description:'Block crashes and fire for 5 seconds. Cooldown: 25 seconds.'},
   racer:{name:'Turbo',duration:10,cooldown:30,description:'Drive at 3 times speed for 10 seconds. Cooldown: 30 seconds.'},
-  tank:{name:'Missile',duration:0,cooldown:30,description:'Blow up the car ahead. Store another missile every 30 seconds.'}
+  tank:{name:'Missile',duration:0,cooldown:10,description:'Blow up the car ahead. Store another missile every 10 seconds.'}
 };
 let cooldowns={sport:0,racer:0,tank:0,truck:0},activeAbility=null,abilityRemaining=0,missiles=[];
 let truckLifeTime=0;
-let missileAmmo=1,missileRecharge=30,unlimitedAbilities=false,shieldToggle=false,turboToggle=false,blasts=[];
-function shieldActive(){return (activeAbility==='sport'&&abilityRemaining>0)||(unlimitedAbilities&&shieldToggle&&selectedSkin.id==='sport');}
+let missileAmmo=1,missileRecharge=10,unlimitedAbilities=false,shieldToggle=false,turboToggle=false,blasts=[];
+function shieldActive(){return bossCharge>0||(activeAbility==='sport'&&abilityRemaining>0)||(unlimitedAbilities&&shieldToggle&&selectedSkin.id==='sport');}
 function turboActive(){return (activeAbility==='racer'&&abilityRemaining>0)||(unlimitedAbilities&&turboToggle&&selectedSkin.id==='racer');}
 function refreshAbility(){
+  if(playerBoss){
+    abilityButton.disabled=state!=='playing'||bossShotCooldown>0;
+    abilityButton.textContent='Launch cars · Space'+(bossShotCooldown>0?' · '+Math.ceil(bossShotCooldown)+'s':'');
+    abilityHelp.textContent=hardPlayerBoss()?'Flaming boss: 3–6 cars and triple charges. Space fires · C charges.':'Boss: Space launches cars · C charges through traffic, then retreats.';
+    return;
+  }
   const ability=abilities[selectedSkin.id],remaining=cooldowns[selectedSkin.id];
   if(selectedSkin.id==='truck'){
     abilityButton.disabled=true;
@@ -173,6 +184,13 @@ function refreshAbility(){
   abilityHelp.textContent=ability.description;
 }
 function activateAbility(){
+  if(playerBoss){
+    if(state!=='playing'||bossShotCooldown>0)return;
+    const count=hardPlayerBoss()?3+playerVolley++%4:3;
+    const burning=hardPlayerBoss()?1+Math.floor(Math.random()*3):0;
+    for(let i=0;i<count;i++)missiles.push({x:player.x+player.w/2-15,y:player.y-48,w:30,h:46,vx:(i-(count-1)/2)*110,bossCar:true,burning:i<burning,fireClock:0});
+    bossShotCooldown=1;return;
+  }
   if(selectedSkin.id==='truck')return;
   if(state!=='playing')return;
   if(selectedSkin.id==='tank'){
@@ -196,6 +214,15 @@ function activateAbility(){
   refreshAbility();
 }
 function updateAbilities(step){
+  bossShotCooldown=Math.max(0,bossShotCooldown-step);
+  bossChargeCooldown=Math.max(0,bossChargeCooldown-step);
+  if(bossCharge>0&&bossCharge<=step)bossReturning=true;
+  bossCharge=Math.max(0,bossCharge-step);
+  chargeButton.disabled=state!=='playing'||bossChargeCooldown>0||bossReturning;
+  chargeButton.textContent=bossReturning?'Retreating':bossCharge>0?'Charging!':'Charge · C'+(bossChargeCooldown>0?' · '+Math.ceil(bossChargeCooldown)+'s':'');
+  for(const fire of friendlyFires)fire.ttl-=step;
+  friendlyFires=friendlyFires.filter(fire=>fire.ttl>0);
+  cars=cars.filter(car=>{if(!friendlyFires.some(fire=>collides(car,fire)))return true;blasts.push({x:car.x+car.w/2,y:car.y+car.h/2,ttl:.45});return false;});
   if(selectedSkin.id==='truck'){
     const interval=unlimitedAbilities?.00001:20;
     truckLifeTime+=step;
@@ -203,7 +230,7 @@ function updateAbilities(step){
     if(earned>0){truckLifeTime=Math.max(0,truckLifeTime-earned*interval);lives+=earned;updateCounters();}
   }
   missileRecharge-=step;
-  while(missileRecharge<=0){missileAmmo++;missileRecharge+=30;}
+  while(missileRecharge<=0){missileAmmo++;missileRecharge+=10;}
   for(const blast of blasts)blast.ttl-=step;
   blasts=blasts.filter(blast=>blast.ttl>0);
   for(const skin of Object.keys(cooldowns))cooldowns[skin]=Math.max(0,cooldowns[skin]-step);
@@ -211,7 +238,8 @@ function updateAbilities(step){
   if(abilityRemaining===0)activeAbility=null;
   for(const missile of missiles){
     // Check the full distance travelled so missiles cannot skip cars.
-    const previousY=missile.y;missile.y-=700*step;
+    const previousY=missile.y;missile.y-=700*step;missile.x+=(missile.vx||0)*step;
+    if(missile.burning){missile.fireClock-=step;if(missile.fireClock<=0){friendlyFires.push({x:missile.x,y:missile.y,w:missile.w,h:24,ttl:5});missile.fireClock=.05;}}
     const sweep={x:missile.x,y:missile.y,w:missile.w,h:previousY-missile.y+missile.h};
     const hit=cars.filter(car=>collides(sweep,car)).sort((a,b)=>b.y-a.y)[0];
     if(hit){cars=cars.filter(car=>car!==hit);missile.spent=true;blasts.push({x:hit.x+hit.w/2,y:hit.y+hit.h/2,ttl:.45});}
@@ -250,11 +278,47 @@ document.getElementById('admin-life').addEventListener('click',()=>{
 });
 document.getElementById('admin-ability').addEventListener('click',()=>{
   if(!adminUnlocked)return;
-  unlimitedAbilities=true;activeAbility=null;abilityRemaining=0;truckLifeTime=0;
+  unlimitedAbilities=true;activeAbility=null;abilityRemaining=0;truckLifeTime=0;if(selectedSkin.id==='truck')transformBoss(true);
   codeResult.textContent='Unlimited abilities enabled: shield and turbo toggles, unlimited missiles, and 100,000 truck lives per second.';
   refreshAbility();
 });
-const colors=['#ff727c','#ffbf69','#ac96ff','#79bfff'];
+let playerBoss=false,bossCharge=0,bossReturning=false,bossChargeOriginY=478,bossShotCooldown=0,bossChargeCooldown=0,playerVolley=0,chargeLanes=[],friendlyFires=[];
+let drunkMode=false,controlEpoch=0;
+const directions=['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];
+let controlMap=[...directions];
+function hardPlayerBoss(){return playerBoss&&unlimitedAbilities;}
+function shuffleControls(){
+  const options=[];
+  function permute(values,remaining){
+    if(!remaining.length){if(values.every((v,i)=>v!==directions[i])&&values.some((v,i)=>v!==controlMap[i]))options.push(values);return;}
+    remaining.forEach(v=>permute([...values,v],remaining.filter(x=>x!==v)));
+  }
+  permute([],directions);controlMap=options[Math.floor(Math.random()*options.length)];
+}
+const chargeButton=document.createElement('button');chargeButton.id='charge-control';chargeButton.hidden=true;chargeButton.textContent='Charge · C';abilityButton.after(chargeButton);
+function charge(){
+  if(!playerBoss||state!=='playing'||bossChargeCooldown>0||bossReturning)return;
+  bossChargeOriginY=player.y;
+  const lanes=[42,167,292],nearest=lanes.reduce((a,b)=>Math.abs(a-player.x)<Math.abs(b-player.x)?a:b);
+  chargeLanes=hardPlayerBoss()?lanes.filter(x=>x!==nearest):[];
+  bossCharge=hardPlayerBoss()?.3:1.2;bossChargeCooldown=6;
+}
+chargeButton.addEventListener('click',charge);
+function transformBoss(hard=false){
+  if(!adminUnlocked)return;
+  playerBoss=true;if(hard)unlimitedAbilities=true;
+  player.w=44;player.h=76;player.x=Math.min(378-player.w,player.x);player.y=Math.min(588-player.h,player.y);
+  chargeButton.hidden=false;activeAbility=null;abilityRemaining=0;
+  codeResult.textContent=hardPlayerBoss()?'Flaming boss powers enabled! Space fires · C triple charges.':'Boss powers enabled! Space fires · C charges.';
+  refreshAbility();
+}
+const becomeBoss=document.createElement('button');becomeBoss.textContent='Become the boss';codesPanel.insertBefore(becomeBoss,codeResult);becomeBoss.addEventListener('click',()=>transformBoss());
+const drunkButton=document.createElement('button');drunkButton.id='druck-mode';drunkButton.className='vehicle-button';drunkButton.hidden=true;
+drunkButton.innerHTML='<svg viewBox="0 0 80 90" aria-hidden="true"><path d="M56 26h13q8 0 8 10v22q0 10-10 10H56" fill="none" stroke="#ffe4a3" stroke-width="7"/><path d="M9 20h48v57H9z" fill="#e6a323" stroke="#ffe4a3" stroke-width="4"/><path d="M20 34v32m13-32v32m13-32v32" stroke="#ffe4a3" stroke-width="4"/><path d="M8 23Q0 6 17 9Q23-3 34 7Q48-3 56 9Q69 12 58 26z" fill="#fff6df"/></svg><span>Druck mode<br><small>Controls change every 5 seconds</small></span>';
+drunkButton.setAttribute('aria-label','Start Druck mode with shuffled controls every five seconds');
+hardModeButton.after(drunkButton);
+drunkButton.addEventListener('click',()=>{if(state!=='paused')return;begin();drunkMode=true;shuffleControls();});
+const controlHint=document.createElement('p');controlHint.className='help';controlHint.hidden=true;document.querySelector('.controls').after(controlHint);
 const skins=[{id:'sport',name:'Sport',color:'#6fffd0'},{id:'racer',name:'Racer',color:'#ffbf69'},{id:'tank',name:'Tank',color:'#a5bd72'},{id:'truck',name:'Truck',color:'#72baff'}];
 let selectedSkin=skins[0];
 const vehicleButton=document.getElementById('vehicle'),garage=document.querySelector('.garage');
@@ -267,12 +331,14 @@ bossModeButton.innerHTML=vehicleIcon({id:'racer',color:'#ff727c'})+'<span>Start 
 bossModeButton.addEventListener('click',()=>{if(state==='paused')begin(true);});
 hardModeButton.innerHTML='<span class="fire-car"><span class="flames" aria-hidden="true">🔥</span>'+vehicleIcon({id:'racer',color:'#ff9b38'})+'</span><span>Hard boss mode · 2 minutes<br>3–6 cars · 3 charges at 4× speed<br>2× movement · 3 lives · 5-second fire · Escape within 3s</span>';
 hardModeButton.addEventListener('click',()=>{if(state==='paused')begin(true,true);});
-function show(heading,copy,label){title.textContent=heading;message.textContent=copy;start.textContent=label;bossModeButton.hidden=state!=='paused';hardModeButton.hidden=state!=='paused';overlay.hidden=false;codesToggle.hidden=!adminUnlocked;codesPanel.hidden=true;refreshAbility();status.textContent=heading+' '+copy;start.focus();}
-function begin(onlyBoss=false,hard=false){state='playing';scenery=Math.random()<.5?'city':'forest';truckLifeTime=0;missileAmmo=1;missileRecharge=30;unlimitedAbilities=false;shieldToggle=false;turboToggle=false;blasts=[];codesPanel.hidden=true;codesToggle.hidden=!adminUnlocked;codeResult.textContent='';cooldowns={sport:0,racer:0,tank:0,truck:0};activeAbility=null;abilityRemaining=0;missiles=[];hardMode=hard;bossOnly=onlyBoss||hard;runDuration=bossOnly?120:RUN_SECONDS;elapsed=0;fires=[];fireExposure=0;boss=null;particles=[];explosionTime=0;phase.textContent='THREE MINUTES. ONE FINAL BOSS.';cars=[];coins=[];collected=0;lives=bossOnly?3:1;coinClock=5;invulnerable=0;noticeClock=0;updateCounters();notice.textContent='Each gold coin gives +1 life.';spawnClock=.65;roadOffset=0;player.x=188;player.y=485;keys.clear();timer.textContent=runDuration.toFixed(1)+'s';progress.max=runDuration;progress.value=0;bossModeButton.hidden=true;hardModeButton.hidden=true;overlay.hidden=true;last=performance.now();if(bossOnly){enterBoss();phase.textContent=hardMode?'HARD BOSS · TWO MINUTES · NO COINS':'BOSS MODE · TWO MINUTES · NO COINS';}status.textContent=bossOnly?'Boss challenge started. Survive two minutes with '+lives+' lives.':'Run started. Survive three minutes. Boss at two minutes.';}
+function show(heading,copy,label){title.textContent=heading;message.textContent=copy;start.textContent=label;bossModeButton.hidden=state!=='paused';hardModeButton.hidden=state!=='paused';drunkButton.hidden=state!=='paused';overlay.hidden=false;codesToggle.hidden=!adminUnlocked;refreshAbility();status.textContent=heading+' '+copy;start.focus();}
+function begin(onlyBoss=false,hard=false){state='playing';
+  playerBoss=false;bossCharge=0;bossReturning=false;bossShotCooldown=0;bossChargeCooldown=0;playerVolley=0;chargeLanes=[];friendlyFires=[];chargeButton.hidden=true;
+  drunkMode=false;controlEpoch=0;controlMap=[...directions];controlHint.hidden=true;drunkButton.hidden=true;player.w=44;player.h=76;scenery=Math.random()<.5?'city':'forest';truckLifeTime=0;missileAmmo=1;missileRecharge=10;unlimitedAbilities=false;shieldToggle=false;turboToggle=false;blasts=[];codesToggle.hidden=!adminUnlocked;codeResult.textContent='';cooldowns={sport:0,racer:0,tank:0,truck:0};activeAbility=null;abilityRemaining=0;missiles=[];hardMode=hard;bossOnly=onlyBoss||hard;runDuration=bossOnly?120:RUN_SECONDS;elapsed=0;fires=[];fireExposure=0;boss=null;particles=[];explosionTime=0;phase.textContent='THREE MINUTES. ONE FINAL BOSS.';cars=[];coins=[];collected=0;lives=bossOnly?3:1;coinClock=5;invulnerable=0;noticeClock=0;updateCounters();notice.textContent='Each gold coin gives +1 life.';spawnClock=.65;roadOffset=0;player.x=188;player.y=485;keys.clear();timer.textContent=runDuration.toFixed(1)+'s';progress.max=runDuration;progress.value=0;bossModeButton.hidden=true;hardModeButton.hidden=true;overlay.hidden=true;last=performance.now();if(bossOnly){enterBoss();phase.textContent=hardMode?'HARD BOSS · TWO MINUTES · NO COINS':'BOSS MODE · TWO MINUTES · NO COINS';}status.textContent=bossOnly?'Boss challenge started. Survive two minutes with '+lives+' lives.':'Run started. Survive three minutes. Boss at two minutes.';}
 function finish(won){state=won?'won':'lost';keys.clear();show(won?'Boss defeated!':'Out of lives!',(won?(bossOnly?'Two-minute boss challenge survived! BOOM!':'Three minutes survived! BOOM!'):'You survived '+elapsed.toFixed(1)+' seconds.')+' Coins collected: '+collected+'.','Play again');}
 function pause(){if(state!=='playing')return;state='paused';keys.clear();show('Pit stop.','Choose a vehicle, then resume. Each vehicle has an ability. Cooldowns pause here and stay when you change skins.','Resume');}
-start.addEventListener('click',()=>{if(state==='paused'){state='playing';last=performance.now();overlay.hidden=true;codesPanel.hidden=true;codesToggle.setAttribute('aria-expanded','false');}else begin();});
-window.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;if(!e.repeat)recordAdminKey(e.key);if(e.code==='Space'&&state==='playing'){e.preventDefault();if(!e.repeat)activateAbility();}if(e.key.startsWith('Arrow')){e.preventDefault();if(state==='playing')keys.add(e.key);}if(e.key.toLowerCase()==='p'&&!e.repeat){if(state==='playing')pause();else if(state==='paused')start.click();}});
+start.addEventListener('click',()=>{if(state==='paused'){state='playing';last=performance.now();overlay.hidden=true;}else begin();});
+window.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;if(!e.repeat)recordAdminKey(e.key);if(e.code==='KeyC'&&!e.repeat)charge();if(e.code==='Space'&&state==='playing'&&e.target.tagName!=='BUTTON'){e.preventDefault();if(!e.repeat)activateAbility();}if(e.key.startsWith('Arrow')){e.preventDefault();if(state==='playing')keys.add(e.key);}if(e.key.toLowerCase()==='p'&&!e.repeat){if(state==='playing')pause();else if(state==='paused')start.click();}});
 window.addEventListener('keyup',e=>keys.delete(e.key));
 window.addEventListener('blur',pause);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});
@@ -281,23 +347,23 @@ function collides(a,b){const inset=5;return a.x+inset<b.x+b.w-inset&&a.x+a.w-ins
 let scenery='city';
 function spawnCoinRoute(speed){
   const route=Math.floor(Math.random()*3);
-  const mirror=Math.random()<.5?-1:1;
-  const routes=[
-    {name:'Narrow gap',centers:[210],gaps:[64]},
-    {name:'Zigzag',centers:[210-64*mirror,210,210+64*mirror],gaps:[76,76,76]},
-    {name:'Widening route',centers:[210,210+36*mirror,210],gaps:[64,90,120]}
-  ];
-  const pattern=routes[route];
-  pattern.centers.forEach((center,index)=>{
-    const y=-110-index*210,gap=pattern.gaps[index];
-    for(const x of [center-gap/2-44,center+gap/2])cars.push({x,y,w:44,h:76,color:'#ff727c',speed});
-    // One reward per route, in the final gate to reach the player.
-    if(index===pattern.centers.length-1)coins.push({x:center-12,y:y+26,w:24,h:24,speed});
-  });
-  coinClock=9;
-  // Hold ordinary traffic until the entire route has entered the road.
-  spawnClock=(pattern.centers.length*210+160)/speed;
-  announce('Gold route: '+pattern.name+'! One coin at the final gate.');
+  const bypassRight=Math.random()<.5;
+  const center=(bypassRight?162:258)+(Math.random()-.5)*24;
+  const gap=[64,76,88][route];
+  const kinds=['tank','sport','truck'];
+  // Exactly two real enemies frame the optional coin gap.
+  for(const x of [center-gap/2-44,center+gap/2]){
+    const kind=kinds[Math.floor(Math.random()*kinds.length)];
+    const h=kind==='truck'?150:76;
+    cars.push({kind,x,y:-110-h,w:44,h,
+      color:kind==='tank'?'#a5bd72':kind==='sport'?'#ff727c':'#72baff',
+      speed,shotClock:.8,chargeClock:.9,charged:false});
+  }
+  coins.push({x:center-12,y:-148,w:24,h:24,speed});
+  coinClock=Math.max(9,1080/speed);
+  // Keep ordinary traffic out until the pair and reward have passed.
+  spawnClock=1080/speed;
+  announce('Optional coin gap: two enemies! Stay '+(bypassRight?'RIGHT':'LEFT')+' to skip.');
 }
 function currentScenery(){
   if(boss)return 'boss';
@@ -361,11 +427,20 @@ function update(dt){
   if((bossOnly||elapsed>=BOSS_START)&&!boss)enterBoss();
   invulnerable=Math.max(0,invulnerable-step);
   noticeClock=Math.max(0,noticeClock-step);if(noticeClock===0)notice.textContent=boss?'Dodge the launches. Survive until the timer hits zero!':'Each gold coin gives +1 life.';
-  let dx=Number(keys.has('ArrowRight'))-Number(keys.has('ArrowLeft')),dy=Number(keys.has('ArrowDown'))-Number(keys.has('ArrowUp'));
+  if(drunkMode&&Math.floor(elapsed/5)!==controlEpoch){controlEpoch=Math.floor(elapsed/5);shuffleControls();}
+  controlHint.hidden=!drunkMode;
+  if(drunkMode)controlHint.textContent=directions.map((key,i)=>key.replace('Arrow','')+' → '+controlMap[i].replace('Arrow','')).join(' · ');
+  const movementKeys=drunkMode?new Set([...keys].map(key=>controlMap[directions.indexOf(key)])):keys;
+  let dx=Number(movementKeys.has('ArrowRight'))-Number(movementKeys.has('ArrowLeft')),dy=Number(movementKeys.has('ArrowDown'))-Number(movementKeys.has('ArrowUp'));
+  if(bossCharge>0){dx=0;dy=-1;}else if(bossReturning){dx=0;dy=Math.sign(bossChargeOriginY-player.y);}
   const length=Math.hypot(dx,dy)||1;
-  const playerSpeed=285*(selectedSkin.id==='truck'?.9:1)*(turboActive()?3:1);
+  const playerSpeed=285*(bossCharge>0?(hardPlayerBoss()?12:3):(hardPlayerBoss()?2:1))*(selectedSkin.id==='truck'?.9:1)*(turboActive()?3:1);
   player.x=Math.max(42,Math.min(378-player.w,player.x+dx/length*playerSpeed*step));
-  player.y=Math.max(boss?260:12,Math.min(588-player.h,player.y+dy/length*playerSpeed*step));
+  player.y=Math.max(boss&&!playerBoss?260:12,Math.min(588-player.h,player.y+dy/length*playerSpeed*step));
+  if(bossReturning&&Math.abs(bossChargeOriginY-player.y)<=playerSpeed*step){
+    player.y=bossChargeOriginY;bossReturning=false;
+    if(chargeLanes.length){player.x=chargeLanes.shift();bossCharge=.3;}
+  }
   spawnClock-=step;
   coinClock-=step;
   const speed=210+Math.min(elapsed,90)*1.2;
@@ -383,6 +458,7 @@ function update(dt){
       }
     }
   }
+  if(bossCharge>0)cars=cars.filter(car=>{if(!collides(player,car))return true;blasts.push({x:car.x+car.w/2,y:car.y+car.h/2,ttl:.45});return false;});
   for(const hazard of (boss?[...cars,boss]:cars)){if(invulnerable===0&&!shieldActive()&&collides(player,hazard)){lives--;updateCounters();if(lives===0){finish(false);break;}invulnerable=2;announce('Extra life used! Shield active for 2 seconds.');}}
   if(state==='playing')updateFireExposure(step);
   if(state==='playing')for(const coin of coins){coin.y+=coin.speed*step;if(!coin.taken&&collides(player,coin)){coin.taken=true;collected++;lives++;updateCounters();announce('Coin collected! +1 life');}}
@@ -393,6 +469,7 @@ function update(dt){
 }
 function carShape(car,color,isPlayer){
   const {x,y,w,h}=car;
+  if(isPlayer&&playerBoss){carShape(car,hardPlayerBoss()?'#b84920':'#963d63',false);if(hardPlayerBoss())drawFlame(x+w/2,y+25,24);ctx.fillStyle='#fff';ctx.font='bold 14px system-ui';ctx.textAlign='center';ctx.fillText('BOSS',x+w/2,y+48);return;}
   if(car.kind==='missile'){ctx.fillStyle='#ffb347';ctx.fillRect(x,y,w,h);ctx.fillStyle='#fff4b3';ctx.fillRect(x+4,y+4,w-8,h-8);return;}
   if(car.kind==='truck'||(isPlayer&&selectedSkin.id==='truck')){ctx.fillStyle=color;ctx.fillRect(x,y,w,24);ctx.fillStyle='#153348';ctx.fillRect(x+6,y+5,w-12,12);ctx.fillStyle='#c8d9e9';ctx.fillRect(x,y+28,w,h-28);ctx.strokeStyle='#75899c';for(let line=y+36;line<y+h;line+=14){ctx.beginPath();ctx.moveTo(x+4,line);ctx.lineTo(x+w-4,line);ctx.stroke();}return;}
   if(car.kind==='sport'&&car.chargeClock>0&&car.y>=0){ctx.fillStyle='#ff536f33';ctx.fillRect(x,y+h,w,600-y-h);}
@@ -440,8 +517,8 @@ function draw(){
     if(boss.warning){ctx.save();ctx.strokeStyle='#ff727c';ctx.lineWidth=2;ctx.setLineDash([8,8]);ctx.beginPath();ctx.moveTo(boss.x+boss.w/2,boss.y+boss.h);ctx.lineTo(boss.warning.x,boss.warning.y);ctx.stroke();ctx.setLineDash([]);ctx.beginPath();ctx.arc(boss.warning.x,boss.warning.y,28,0,Math.PI*2);ctx.stroke();ctx.restore();}
   }
   for(const blast of blasts){ctx.fillStyle='#ffb347';ctx.beginPath();ctx.arc(blast.x,blast.y,12+35*(1-blast.ttl/.45),0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff';ctx.font='bold 16px system-ui';ctx.textAlign='center';ctx.fillText('BOOM!',blast.x,blast.y);}
-  for(const missile of missiles){ctx.fillStyle='#ffcf70';ctx.fillRect(missile.x,missile.y,missile.w,missile.h);drawFlame(missile.x+6,missile.y+missile.h+12,10);}
-  cars.forEach(car=>{carShape(car,car.color,false);if(car.leavesFire){drawFlame(car.x+10,car.y+30,14);drawFlame(car.x+26,car.y+30,14);}});
+  for(const missile of missiles){if(missile.bossCar){carShape(missile,'#ff727c',false);if(missile.burning)drawFlame(missile.x+15,missile.y+20,18);continue;}ctx.fillStyle='#ffcf70';ctx.fillRect(missile.x,missile.y,missile.w,missile.h);drawFlame(missile.x+6,missile.y+missile.h+12,10);}
+  for(const fire of friendlyFires){ctx.save();ctx.globalAlpha=.5;drawFlame(fire.x+fire.w/2,fire.y+fire.h,22);ctx.restore();}cars.forEach(car=>{carShape(car,car.color,false);if(car.leavesFire){drawFlame(car.x+10,car.y+30,14);drawFlame(car.x+26,car.y+30,14);}});
   for(const coin of coins){ctx.fillStyle='#ffce45';ctx.beginPath();ctx.arc(coin.x+12,coin.y+12,12,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#fff3b0';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#825600';ctx.font='bold 17px system-ui';ctx.textAlign='center';ctx.fillText('+',coin.x+12,coin.y+18);}
   ctx.save();if(invulnerable>0)ctx.globalAlpha=.55+.25*Math.sin(elapsed*24);carShape(player,selectedSkin.color,true);ctx.restore();
   if(invulnerable>0||shieldActive()){ctx.strokeStyle='#6fffd0';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(player.x-7,player.y-7,player.w+14,player.h+14,14);ctx.stroke();}

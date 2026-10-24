@@ -3,7 +3,7 @@ On screen: a road with moveing car useing arrow key to move and other cars movei
 Win or lose: survive 3 min to win. hit a car and you lose.
 skin: add other car that the player can play as like a tank and a truck
 pause: this a car the player can click to change skin
-coin: it give you an extra life but to get it you do an hard path and an counter to see how much coins you have and 3 diffent path and each path gives one coin per one path and you can use the emeny to make the path
+coin: it give you an extra life but to get it you do an hard path and an counter to see how much coins you have 
 boss: a big car that move away from you , it shoot other car in a hard poition at you,and it stop moving left and right then chare into you then retreasts and you can't get anymore coin,the boss fight began after 2 min and the boss will go boom when you win.
 boss mode: when pause you can press a car shape button to go too the boss fight for two min and you have 3 lives
 hard mode: work just like boss mode but the button is on fire and the boss shoot 3 to 6 car at once and it chare 4 times fast and it chare 3 times in a row in different spots and it move faster by 2 times and make the boss on fire. car that the boss shoot leaves fire for 5 second and the fire kill you if you are in it for 3 second  make the fire 0.50 seeable for 1 to 3 car can be on fire
