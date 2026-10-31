@@ -43,7 +43,7 @@ canvas{border-left:6px solid #211a34;border-right:6px solid #211a34}
 <div class="room-cab right"><div class="sign">PLAYER 2</div><div class="screen"></div><div class="deck"></div></div>
 </div>
 <main>
-<header><p class="brand">MY ARCADE</p><h1>Grab your next game.</h1><p class="intro">Arrow keys move left/right and forward/back in depth. Space or E lowers the claw to grab. Carry your ball over the corner chute and press again to release.</p></header>
+<header><p class="brand">MY ARCADE</p><h1>Grab your next game.</h1><p class="intro">Arrow keys move left/right and forward/back in depth. Space or E lowers the claw to grab. Grabbed bubbles are automatically carried to the prize chute.</p></header>
 <div class="layout">
 <section class="cabinet" aria-label="Game selection claw machine">
 <div class="marquee"><span>THE GAME GRABBER</span><span>FREE PLAY</span></div>
@@ -53,7 +53,7 @@ canvas{border-left:6px solid #211a34;border-right:6px solid #211a34}
 <div class="controls" aria-label="Claw controls"><button data-key="ArrowLeft" aria-label="Move claw left">←</button><button data-key="ArrowUp" aria-label="Move claw farther back">↑</button><button data-key="ArrowDown" aria-label="Move claw closer">↓</button><button data-key="ArrowRight" aria-label="Move claw right">→</button><button id="grab">Lower claw · Space / E</button></div>
 </div>
 </section>
-<aside class="prizes" aria-label="Collected games"><h2>Your game corner</h2><p id="empty">Lower a ball into the front-left chute. Its game button will appear here—click it to play!</p><nav id="games" aria-label="Unlocked games"></nav></aside>
+<aside class="prizes" aria-label="Collected games"><h2>Your game corner</h2><p id="empty">Grab a bubble and the claw delivers it to the front-left chute. Its game button will appear here—click it to play!</p><nav id="games" aria-label="Unlocked games"></nav></aside>
 </div>
 <footer>← / →: left / right · ↑ / ↓: farther / closer · Space / E: lower claw<br>Games you collect stay unlocked when you return to the menu.</footer>
 </main>
@@ -62,7 +62,7 @@ canvas{border-left:6px solid #211a34;border-right:6px solid #211a34}
 const canvas=document.getElementById('machine'),ctx=canvas.getContext('2d');
 const notice=document.getElementById('notice'),grabButton=document.getElementById('grab'),gamesNav=document.getElementById('games');
 const catalog=[
- {id:'runner',name:'Minute Runner',lines:['MINUTE','RUNNER'],href:'game1.html',color:'#6fffd0',x:265,z:180},
+ {id:'runner',name:'Crazy Drive',lines:['CRAZY','DRIVE'],href:'game1.html',color:'#6fffd0',x:265,z:180},
  {id:'two',name:'Game Two',lines:['GAME','TWO'],href:'game2.html',color:'#ffbf69',x:470,z:280}
 ];
 const keys=new Set(),claw={x:300,z:130,h:215,phase:'idle'};
@@ -75,8 +75,24 @@ const ballPositions=[
  [110,180],[235,180],[360,180],[490,180],
  [200,290],[310,290],[420,290],[530,290]
 ];
-balls=ballPositions.map(([x,z],i)=>({...catalog[i%catalog.length],x,z,h:radius,vy:0,falling:false}))
- .filter(ball=>!unlocked.has(ball.id));
+balls=ballPositions.map(([x,z],i)=>({...catalog[i%catalog.length],x,z,h:radius,vy:0,falling:false}));
+let audioContext;
+function sound(notes){
+ try{
+  const AudioContext=window.AudioContext||window.webkitAudioContext;
+  if(!AudioContext)return;
+  audioContext=audioContext||new AudioContext();
+  if(audioContext.state==='suspended')audioContext.resume().catch(()=>{});
+  notes.forEach((frequency,i)=>{
+   const oscillator=audioContext.createOscillator(),gain=audioContext.createGain();
+   const time=audioContext.currentTime+i*.12;
+   oscillator.type='sine';oscillator.frequency.value=frequency;
+   gain.gain.setValueAtTime(0,time);gain.gain.linearRampToValueAtTime(.09,time+.01);gain.gain.exponentialRampToValueAtTime(.001,time+.14);
+   oscillator.connect(gain);gain.connect(audioContext.destination);
+   oscillator.start(time);oscillator.stop(time+.15);
+  });
+ }catch{}
+}
 function say(text){notice.textContent=text;}
 function renderLinks(){
  gamesNav.replaceChildren();
@@ -92,6 +108,7 @@ renderLinks();
 if(unlocked.size===catalog.length)say('All games collected! Click a game in your game corner to play.');
 function collect(ball){
  unlocked.add(ball.id);balls=balls.filter(b=>b!==ball);pulse=1;
+ sound([523,659,784,1047]);
  try{sessionStorage.setItem('arcade-claw-games',JSON.stringify([...unlocked]));}catch{}
  renderLinks();say(ball.name+' unlocked! Click its button in your game corner to open it.');
 }
@@ -103,6 +120,7 @@ function project(x,z,h=0){
 function toggleGrab(){
  if(claw.phase!=='idle')return;
  claw.phase='lowering';grabButton.disabled=true;
+ sound([220,180]);
  say(held?'Lowering your ball toward the chute…':'Lowering claw…');
 }
 function update(dt){
@@ -117,18 +135,26 @@ function update(dt){
   if(claw.h===64){
    if(held){
     held.falling=true;held.vy=0;held=null;
+    sound([440,280]);
     say('Ball released. The claw is lifting back up.');
    }else{
     const target=balls.filter(b=>!b.falling&&Math.hypot(b.x-claw.x,b.z-claw.z)<48)
      .sort((a,b)=>Math.hypot(a.x-claw.x,a.z-claw.z)-Math.hypot(b.x-claw.x,b.z-claw.z))[0];
-    if(target){held=target;say('Got '+target.name+'! After lifting, move over the front-left chute and press Space or E.');}
-    else say('Missed! Use the floor target to line up with a ball in both directions.');
+    if(target){held=target;sound([440,660]);say('Got '+target.name+'! Carrying it to the prize chute automatically.');}
+    else {sound([180,120]);say('Missed! Use the floor target to line up with a ball in both directions.');}
    }
    claw.phase='lifting';
   }
  }else if(claw.phase==='lifting'){
   claw.h=Math.min(215,claw.h+180*dt);
-  if(claw.h===215){claw.phase='idle';grabButton.disabled=false;grabButton.textContent=held?'Lower & drop · Space / E':'Lower claw · Space / E';}
+  if(claw.h===215){
+   if(held){claw.phase='transporting';say('Moving to the prize chute...');}
+   else{claw.phase='idle';grabButton.disabled=false;grabButton.textContent='Lower claw · Space / E';}
+  }
+ }else if(claw.phase==='transporting'){
+  const dx=hole.x-claw.x,dz=hole.z-claw.z,distance=Math.hypot(dx,dz),step=260*dt;
+  if(distance<=step){claw.x=hole.x;claw.z=hole.z;claw.phase='lowering';say('Lowering your bubble into the prize chute...');}
+  else{claw.x+=dx/distance*step;claw.z+=dz/distance*step;}
  }
  if(held){held.x=claw.x;held.z=claw.z;held.h=claw.h-32;}
  for(const ball of [...balls]){
