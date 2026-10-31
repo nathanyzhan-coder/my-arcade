@@ -3,10 +3,152 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Game Two — My Arcade</title>
+<title>Game Two — Cursor Survival</title>
 <style>
-*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#0b1321;color:#edf6ff;font-family:system-ui,sans-serif}main{width:min(100%,460px)}a{display:inline-block;padding:10px 16px;border:1px solid #35485d;border-radius:10px;background:#233449;color:#edf6ff;text-decoration:none;font-size:13px;font-weight:750}a:hover{background:#35485d}a:focus-visible{outline:3px solid #6fffd0;outline-offset:3px}h1{margin-top:32px}p{color:#90a5bd;line-height:1.6}
+*{box-sizing:border-box}body{margin:0;background:#fff;color:#16181d;font-family:system-ui,sans-serif}main{width:min(100%,1050px);margin:auto;padding:20px}header{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;border-bottom:1px solid #ddd;padding-bottom:16px}h1{font-size:23px;margin:3px 0}.eyebrow{font-size:10px;letter-spacing:2px;font-weight:800;color:#6b7280;margin:0}.exit{color:#252a33;text-decoration:none;border:1px solid #ccc;border-radius:9px;padding:9px 13px;font-size:13px}.stats{display:flex;gap:24px;font-weight:800}.stats small{display:block;font-size:10px;letter-spacing:1px;color:#737983;margin-bottom:4px}#level{font-size:24px}.health{color:#bf3244}#arena{position:relative;margin-top:18px;border:2px solid #20232b;border-radius:12px;overflow:hidden;background:white}canvas{width:100%;height:auto;display:block;aspect-ratio:900/540;touch-action:none}canvas.running{cursor:none}#overlay{position:absolute;inset:0;display:grid;place-items:center;background:#ffffffed;padding:18px;overflow:auto}.card{max-width:460px;width:100%;text-align:center}.card h2{font-size:clamp(22px,4vw,36px);margin:0 0 12px;letter-spacing:-1px}.card p{font-size:14px;color:#5c6470;line-height:1.6;margin:10px 0}.settings{display:flex;gap:12px;justify-content:center;margin:20px 0}.settings label{padding:12px;text-align:left;border:1px solid #ddd;border-radius:10px;flex:1;font-size:12px;font-weight:700}.settings select{display:block;margin-top:8px;width:100%;padding:8px;background:#fff;border:1px solid #bbb;border-radius:6px;font:inherit}button{font:inherit;font-weight:750;padding:11px 18px;border-radius:9px;border:1px solid #bbb;background:#fff;color:#16181d;cursor:pointer}button:hover{background:#f1f2f4}#start{background:#171a21;color:#fff;border:0;width:100%;padding:14px}button:focus-visible,a:focus-visible,select:focus-visible{outline:3px solid #657fff;outline-offset:3px}.bar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px}#notice{font-size:13px;line-height:1.5;margin:0;color:#515966}progress{display:block;width:100%;height:7px;accent-color:#171a21;margin-top:14px}.help{color:#737983;font-size:12px;text-align:center;line-height:1.7;margin:14px 0}[hidden]{display:none!important}
+@media(max-width:600px){main{padding:10px}.stats{gap:16px}h1{font-size:19px}.exit{font-size:12px}.card p{font-size:12px}.card h2{font-size:23px}.settings{margin:10px 0}.settings label{padding:7px}#overlay{align-items:safe center;padding:12px}canvas{aspect-ratio:900/700;min-height:390px}.bar button{font-size:12px;padding:9px}}
+#tutorial{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(85%,620px);margin:0;padding:20px;border-radius:12px;background:#fffffff2;text-align:center;font-size:clamp(15px,2.3vw,21px);line-height:1.7;pointer-events:none}
 </style>
 </head>
-<body><main><a href="index.html">← Exit to menu</a><h1>Game Two</h1><p>This game is still being built. Come back soon for a new adventure.</p></main></body>
+<body>
+<main>
+<header><div><p class="eyebrow">MY ARCADE / GAME TWO</p><h1>Cursor Survival</h1></div><div class="stats"><div><small>LEVEL</small><span id="level">0 / 100</span></div><div><small>HP</small><span id="hp" class="health">100 / 100</span></div></div><a class="exit" href="index.html">← Exit to menu</a></header>
+<div id="arena">
+<canvas id="game" width="900" height="540" tabindex="0" aria-label="Cursor survival. Move your mouse or drag to move your player cursor. Dodge the warned black beams. Press P to pause."></canvas>
+<p id="tutorial" aria-label="Level 0 instructions" hidden></p>
+<div id="overlay" hidden><div class="card"><h2 id="title"></h2><p id="message"></p><button id="start">Play again</button></div></div>
+</div>
+<progress id="progress" value="0" max="10" aria-label="Attacks survived this level"></progress>
+<div class="bar"><p id="notice" role="status" aria-live="polite">Level 0</p><button id="pause" disabled>Pause · P</button></div>
+<p class="help">Mouse / drag: move your player cursor · P: pause / resume<br>10 attacks per level · HP carries over between levels · Start with 100 HP · Your cursor follows instantly.</p>
+</main>
+<script>
+'use strict';
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const overlay=document.getElementById('overlay'),title=document.getElementById('title'),message=document.getElementById('message');
+const startButton=document.getElementById('start'),pauseButton=document.getElementById('pause');
+const tutorial=document.getElementById('tutorial');
+const tutorialCopy='Welcome to Level 0! Your cursor is the player. Move your mouse or drag to move instantly, no matter how fast you go. You start with 100 HP. Move away from the red warning line before it turns into a black beam. Each hit takes 1 HP. There is a cooldown between shots. Survive 10 beams to beat each level. Clear level 100 to win! Press P to pause. Get ready...';
+let tutorialTime=0;
+const levelDisplay=document.getElementById('level'),hpDisplay=document.getElementById('hp'),progress=document.getElementById('progress'),notice=document.getElementById('notice');
+const W=900,H=540,ATTACKS=10,FINAL_LEVEL=100;
+let state='ready',level=0,hp=100,maxHp=100,shots=0,attack=null,phase='cooldown',clock=1,last=0,invulnerable=0,flash=0;
+const player={x:450,y:365,r:9},target={x:450,y:365};
+function announce(text){notice.textContent=text;}
+function hud(){levelDisplay.textContent=level+' / '+FINAL_LEVEL;hpDisplay.textContent=hp+' / '+maxHp;progress.value=shots;}
+function show(heading,copy,label,allowSettings){
+ title.textContent=heading;message.textContent=copy;startButton.textContent=label;
+ overlay.hidden=false;
+ canvas.classList.remove('running');pauseButton.disabled=state!=='paused';pauseButton.textContent=state==='paused'?'Resume · P':'Pause · P';
+}
+function begin(){
+ maxHp=100;hp=maxHp;tutorialTime=0;tutorial.textContent='';tutorial.hidden=false;
+ level=0;shots=0;attack=null;phase='cooldown';clock=1.5;invulnerable=0;flash=0;
+ player.x=target.x=450;player.y=target.y=365;
+ state='playing';overlay.hidden=true;canvas.classList.add('running');pauseButton.disabled=false;pauseButton.textContent='Pause · P';hud();
+ announce('Level 0 · Follow the instructions below. Beam practice starts when the text finishes.');
+ last=performance.now();canvas.focus({preventScroll:true});
+}
+function pause(){
+ if(state!=='playing')return;
+ state='paused';show('Paused.','Resume when you are ready. Your cursor follows your mouse instantly.','Resume',false);
+ announce('Paused · Press P or Resume to continue.');
+}
+function resume(){
+ if(state!=='paused')return;
+ state='playing';overlay.hidden=true;canvas.classList.add('running');pauseButton.disabled=false;pauseButton.textContent='Pause · P';last=performance.now();
+ announce(level===0?'Tutorial · Dodge 10 beams to advance.':'Level '+level+' · Keep moving.');canvas.focus({preventScroll:true});
+}
+function finish(won){
+ state=won?'won':'lost';attack=null;
+ show(won?'Level 100 cleared!':'Out of HP.',won?'You survived every level. Your cursor beat all 1,010 beam attacks, including the tutorial.':'You reached level '+level+' and survived '+shots+' of its 10 beams. Try again with 100 HP.','Play again',false);
+ pauseButton.disabled=true;announce(won?'You win! Level 100 complete.':'Run ended · All HP lost.');
+}
+function nextLevel(){
+ if(level===FINAL_LEVEL){finish(true);return;}
+ level++;shots=0;attack=null;phase='cooldown';clock=1.3;tutorial.hidden=true;hud();
+ announce(level===1?'Tutorial complete! Level 1 · HP carries over. Survive 10 attacks per level to reach and beat level 100.':'Level '+level+' · 10 beams. Stay clear of the warning lines.');
+}
+function timing(){
+ const difficulty=level/FINAL_LEVEL;
+ return {warning:1.15-difficulty*.57,fire:.28,cooldown:.85-difficulty*.46,width:18+difficulty*18};
+}
+function spawnAttack(){
+ const axis=(shots+level)%2===0?'vertical':'horizontal';
+ // Aim at the current player position; warning stays fixed so the beam can be dodged.
+ attack={axis,pos:axis==='vertical'?player.x:player.y,width:timing().width,hit:false};
+ phase='warning';clock=timing().warning;
+ if(level===0&&shots===3)announce('Tutorial 2/3 · Every black beam has a cooldown. Use the gap to reposition. A hit removes 1 HP.');
+ if(level===0&&shots===7)announce('Tutorial 3/3 · Finish all 10 attacks to beat a level. Clear level 100 to win.');
+}
+function isHit(){return attack&&(attack.axis==='vertical'?Math.abs(player.x-attack.pos):Math.abs(player.y-attack.pos))<attack.width/2+player.r;}
+function update(dt){
+ if(state!=='playing')return;
+ if(level===0&&tutorialTime<tutorialCopy.length/30+2){
+  tutorialTime+=dt;
+  const text=tutorialCopy.slice(0,Math.floor(tutorialTime*30));
+  if(tutorial.textContent!==text)tutorial.textContent=text;
+  return;
+ }
+ tutorial.hidden=true;
+ invulnerable=Math.max(0,invulnerable-dt);flash=Math.max(0,flash-dt);
+ clock-=dt;
+ if(phase==='fire'&&attack&&!attack.hit&&invulnerable===0&&isHit()){
+  attack.hit=true;hp--;invulnerable=.65;flash=.2;hud();
+  if(hp<=0){finish(false);return;}
+  announce('Hit! '+hp+' HP left. Dodge the red warning before the black beam fires.');
+ }
+ if(clock>0)return;
+ if(phase==='cooldown'){spawnAttack();}
+ else if(phase==='warning'){phase='fire';clock=timing().fire;}
+ else{shots++;attack=null;hud();if(shots>=ATTACKS)nextLevel();else{phase='cooldown';clock=timing().cooldown;}}
+}
+function draw(){
+ ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);
+ ctx.strokeStyle='#e6e8ec';ctx.lineWidth=1;ctx.strokeRect(18,18,W-36,H-36);
+ // Fixed emitter in the center gives the black beams a clear source.
+ ctx.fillStyle='#151820';ctx.beginPath();ctx.arc(W/2,H/2,15,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(W/2,H/2,5,0,Math.PI*2);ctx.fill();
+ if(attack){
+  const vertical=attack.axis==='vertical',pos=attack.pos,width=attack.width;
+  if(phase==='warning'){
+   ctx.fillStyle='#e4475520';
+   ctx.fillRect(vertical?pos-width/2:0,vertical?0:pos-width/2,vertical?width:W,vertical?H:width);
+   ctx.strokeStyle='#d23447';ctx.lineWidth=2;ctx.setLineDash([9,8]);ctx.beginPath();
+   ctx.moveTo(vertical?pos:0,vertical?0:pos);ctx.lineTo(vertical?pos:W,vertical?H:pos);ctx.stroke();ctx.setLineDash([]);
+   ctx.fillStyle='#b32437';ctx.font='bold 12px system-ui';ctx.textAlign='center';
+   ctx.fillText('MOVE AWAY',vertical?Math.max(65,Math.min(W-65,pos)):W/2,vertical?40:Math.max(30,pos-20));
+  }else if(phase==='fire'){
+   ctx.fillStyle='#050505';ctx.fillRect(vertical?pos-width/2:0,vertical?0:pos-width/2,vertical?width:W,vertical?H:width);
+  }
+ }
+ if(flash>0){ctx.fillStyle='#ee324514';ctx.fillRect(0,0,W,H);}
+ ctx.save();ctx.translate(player.x,player.y);
+ if(invulnerable>0){ctx.strokeStyle='#e14b60';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,19,0,Math.PI*2);ctx.stroke();}
+ ctx.fillStyle='#fff';ctx.strokeStyle='#11151d';ctx.lineWidth=2.5;ctx.lineJoin='round';
+ ctx.beginPath();ctx.moveTo(-6,-11);ctx.lineTo(-6,13);ctx.lineTo(0,7);ctx.lineTo(5,17);ctx.lineTo(10,14);ctx.lineTo(5,5);ctx.lineTo(14,4);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
+ ctx.fillStyle='#727983';ctx.font='12px system-ui';ctx.textAlign='left';ctx.fillText(level===0?'TUTORIAL':'LEVEL '+level,32,H-30);
+ ctx.textAlign='right';ctx.fillText(shots+' / 10 BEAMS',W-32,H-30);
+}
+function movePointer(e){
+ const bounds=canvas.getBoundingClientRect();
+ if(state!=='playing')return;
+ player.x=target.x=Math.max(0,Math.min(W,(e.clientX-bounds.left)/bounds.width*W));
+ player.y=target.y=Math.max(0,Math.min(H,(e.clientY-bounds.top)/bounds.height*H));
+}
+canvas.addEventListener('pointermove',movePointer);
+canvas.addEventListener('pointerdown',e=>{if(state!=='playing')return;e.preventDefault();canvas.setPointerCapture(e.pointerId);movePointer(e);});
+startButton.addEventListener('click',()=>state==='paused'?resume():begin());
+pauseButton.addEventListener('click',()=>state==='paused'?resume():pause());
+window.addEventListener('keydown',e=>{if(e.code==='KeyP'&&!e.repeat){e.preventDefault();state==='playing'?pause():resume();}});
+window.addEventListener('blur',pause);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});
+function frame(now){
+ const dt=last?Math.min((now-last)/1000,.05):0;last=now;
+ if(state==='playing'){let remaining=dt;while(remaining>0&&state==='playing'){const step=Math.min(remaining,1/120);update(step);remaining-=step;}}
+ draw();requestAnimationFrame(frame);
+}
+begin();requestAnimationFrame(frame);
+</script>
+</body>
 </html>
